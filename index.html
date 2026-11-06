@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FencingPool</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#14213a;--mute:#5b6577;--line:#d9dde5;--navy:#14213a;--gold:#b8901f;--ok:#1f7a55;--bad:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1626;--card:#16223a;--ink:#e8ecf4;--mute:#93a0b8;--line:#2a3955;--navy:#0a1120;--gold:#e0b43a;--ok:#4cc38a;--bad:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "Avenir Next","Segoe UI",system-ui,sans-serif}
+header{background:var(--navy);color:#fff;padding:12px 14px}
+header h1{margin:0;font-size:18px}
+header .sub{color:#c9d2e3;font-size:13px;margin-top:2px}
+.who{display:flex;gap:8px;margin-top:8px}
+.who input{flex:1;padding:8px 9px;border-radius:6px;border:1px solid #3b4a68;background:#0e1830;color:#fff;font:inherit}
+nav{display:flex;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:4;overflow-x:auto}
+nav button{flex:1;padding:12px 8px;border:0;background:none;color:var(--mute);font:inherit;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap}
+nav button.on{color:var(--ink);border-bottom-color:var(--gold)}
+main{max-width:900px;margin:0 auto;padding:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+.card h2{margin:0 0 6px;font-size:16px}
+button.act{background:var(--navy);color:#fff;border:0;border-radius:6px;padding:10px 14px;font:inherit;font-weight:600;margin:2px 4px 2px 0}
+button.act.gold{background:var(--gold);color:#14213a}
+button.act.ghost{background:none;color:var(--ink);border:1px solid var(--line)}
+button.act:disabled{opacity:.5}
+input.t,textarea,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;margin:4px 0 8px}
+textarea{min-height:120px}
+details{background:var(--card);border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
+summary{padding:12px;font-weight:600;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+summary span{color:var(--mute);font-weight:500}
+.inner{padding:0 12px 12px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line)}
+th{color:var(--mute);font-weight:600}
+.n{text-align:right;font-variant-numeric:tabular-nums}
+tr.out td{color:var(--mute)}
+tr.cut td{border-top:2px solid var(--bad)}
+.bout{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)}
+.bout .nm{flex:1 1 110px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bout .nm.r{text-align:right}
+.bout input{width:54px;padding:8px;text-align:center;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;font-size:16px}
+.bout button{padding:8px 12px;border:1px solid var(--navy);background:none;color:var(--ink);border-radius:6px;font:inherit;font-weight:600}
+.bout.done button{border-color:var(--ok);color:var(--ok)}
+.tag{font-size:12px;color:var(--mute);flex-basis:100%}
+.win{font-weight:700}
+.badge{display:inline-block;background:var(--gold);color:#14213a;border-radius:10px;padding:1px 9px;font-size:12px;font-weight:700}
+.warn{background:#fff4d6;color:#5a4300;border-radius:6px;padding:8px 10px;font-size:13px;margin-bottom:10px}
+.code{font:700 20px/1 ui-monospace,Menlo,monospace;letter-spacing:2px}
+.toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:8px;max-width:90%;z-index:9}
+.toast.err{background:var(--bad);color:#fff}
+.champ{font-size:20px;font-weight:700}
+.mute{color:var(--mute)}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">FencingPool</h1>
+  <div class="sub" id="sub"></div>
+  <div class="who"><input id="ref" placeholder="Your name (referee)" autocomplete="name"></div>
+</header>
+<div id="navwrap"></div>
+<main id="app"></main>
+
+<script src="config.js"></script>
+<script src="engine.js"></script>
+<script src="store.js"></script>
+<script>
+const CFG = window.FP_FIREBASE, LIVE = !!(CFG && CFG.databaseURL && !/YOUR/i.test(CFG.databaseURL));
+const TABS = [['pools','Pools'],['ranking','Ranking'],['bracket','Bracket'],['standings','Results']];
+let store=null, svc=null, D=null, tab='pools', drafts={}, openPools=new Set(), round=null, dirty=false, online=true, code='';
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sgn = n => (n > 0 ? '+' : '') + n;
+$('#ref').value = localStorage.getItem('fp_ref') || '';
+$('#ref').oninput = e => localStorage.setItem('fp_ref', e.target.value);
+
+function toast(msg, err){ const t=document.createElement('div'); t.className='toast'+(err?' err':''); t.textContent=msg; document.body.append(t); setTimeout(()=>t.remove(),3500); }
+function loadScript(src){ return new Promise((ok,no)=>{ const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>no(new Error('load '+src)); document.head.append(s); }); }
+const recent = () => { try { return JSON.parse(localStorage.getItem('fp_recent')) || []; } catch(e) { return []; } };
+function remember(c, name){ const r = recent().filter(x => x.code !== c); r.unshift({code:c, name}); localStorage.setItem('fp_recent', JSON.stringify(r.slice(0,8))); }
+
+function openTournament(c){
+  if (store && store.close) store.close();
+  code = c.toUpperCase().replace(/[^A-Z0-9]/g,''); D = null; round = null; drafts = {};
+  store = LIVE ? new FPStore.FirebaseStore(code, CFG) : new FPStore.LocalStore(code);
+  svc = new FPStore.Service(store, () => $('#ref').value.trim());
+  store.watch(data => { D = FPStore.derive(data); if (D.meta) remember(code, D.meta.name); render(); }, c2 => { online = c2; head(); });
+  render();
+}
+function route(){ const h = location.hash.replace('#',''); if (h) openTournament(h); else { if (store && store.close) store.close(); store = null; D = null; render(); } }
+window.addEventListener('hashchange', route);
+
+function head(){
+  if (!D || !D.meta) { $('#title').textContent = 'FencingPool'; $('#sub').innerHTML = LIVE ? (online ? 'Live' : 'Offline - reconnecting') : '<span class="badge">Test mode</span> this phone only'; return; }
+  const ph = {reg:'Registration',pools:'Pools',de:'Direct elimination',complete:'Finished'}[D.phase];
+  $('#title').textContent = D.meta.name;
+  $('#sub').innerHTML = '<span class="badge">'+ph+'</span> · '+(LIVE ? (online ? 'live' : 'offline - reconnecting') : 'test mode (this phone only)');
+}
+
+function boutRow(id, kind, max, a, b, rec, ver, win){
+  const d = drafts[id] || {}, done = rec && rec.sa != null;
+  const va = d.a ?? (done ? rec.sa : ''), vb = d.b ?? (done ? rec.sb : '');
+  const FA = D.fencers[a], FB = D.fencers[b];
+  return '<div class="bout '+(done?'done':'')+'" data-id="'+id+'" data-v="'+ver+'" data-kind="'+kind+'">'
+   + '<span class="nm '+(done&&win===a?'win':'')+'">'+esc(FA.n)+' <small>#'+FA.r+'</small></span>'
+   + '<input type="number" inputmode="numeric" min="0" max="'+max+'" data-s="a" value="'+va+'" aria-label="Score '+esc(FA.n)+'">'
+   + '<input type="number" inputmode="numeric" min="0" max="'+max+'" data-s="b" value="'+vb+'" aria-label="Score '+esc(FB.n)+'">'
+   + '<span class="nm r '+(done&&win===b?'win':'')+'">'+esc(FB.n)+' <small>#'+FB.r+'</small></span>'
+   + '<button>'+(done?'Update':'Save')+'</button>'
+   + (done && rec.by ? '<span class="tag">Scored by '+esc(rec.by)+'</span>' : '') + '</div>';
+}
+
+function viewHome(){
+  const r = recent();
+  return '<div class="card"><h2>Start a new tournament</h2>'
+   + (LIVE ? '' : '<div class="warn">Test mode: scores stay on this phone. To let several referees score together, finish the Firebase setup in the README (step 2).</div>')
+   + '<input class="t" id="newname" placeholder="Tournament name, e.g. Spring Cup"><button class="act gold" data-act="create">Create tournament</button></div>'
+   + '<div class="card"><h2>Join with a code</h2><input class="t" id="joincode" placeholder="Tournament code" autocapitalize="characters"><button class="act" data-act="join">Open</button></div>'
+   + (r.length ? '<div class="card"><h2>Recent</h2>'+r.map(x=>'<div><a href="#'+x.code+'">'+esc(x.name)+'</a> <span class="mute code" style="font-size:13px">'+x.code+'</span></div>').join('')+'</div>' : '');
+}
+function viewShare(){
+  return '<div class="card"><div class="mute">Tournament code - give it to the referees</div><div class="code">'+code+'</div>'
+   + '<button class="act ghost" data-act="share">Share link</button>'
+   + (LIVE ? '<div class="mute" style="font-size:13px">Anyone with this link can score bouts. Do not post it publicly.</div>' : '') + '</div>';
+}
+function viewSetup(){
+  return viewShare() + '<div class="card"><h2>Registration</h2><b>'+D.ids.length+'</b> fencers (max 265).'
+   + '<p class="mute">One name per line, best seed first. Seeds follow the order you type.</p>'
+   + '<textarea id="names" placeholder="Anna Rossi&#10;Omar Haddad"></textarea>'
+   + '<button class="act" data-act="add">Add fencers</button><button class="act gold" data-act="start" '+(D.ids.length<4?'disabled':'')+'>Start pools</button>'
+   + (D.ids.length ? '<button class="act ghost" data-act="clear">Clear list</button>' : '') + '</div>'
+   + '<details><summary>Test tools <span>for trying the app</span></summary><div class="inner"><button class="act ghost" data-act="mock">Load 265 mock fencers</button></div></details>';
+}
+function viewPools(){
+  if (D.phase === 'reg') return viewSetup();
+  let h = viewShare() + '<div class="card">Pool bouts: <b>'+D.done+'</b> of '+D.bouts.length+' done';
+  if (D.phase === 'pools') h += '<p>Cut after pools (20-30%): <input class="t" id="cut" type="number" min="20" max="30" value="'+D.meta.cut+'" style="width:90px"> <button class="act gold" data-act="finish">Finish pools</button></p>';
+  h += '</div>';
+  D.pools.forEach((ids, pi) => {
+    const no = pi + 1, bs = D.bouts.filter(b => b.pool === no), done = bs.filter(b => D.scores[b.id] && D.scores[b.id].sa != null).length;
+    h += '<details data-pool="'+no+'" '+(openPools.has(no)?'open':'')+'><summary>Pool '+no+'<span>'+ids.length+' fencers · '+done+'/'+bs.length+'</span></summary><div class="inner">'
+      + '<table><tr><th>Fencer</th><th class="n">V/M</th><th class="n">TG</th><th class="n">TR</th><th class="n">Ind</th></tr>'
+      + ids.map(id => { const f = D.fencers[id], s = D.stats[id]; return '<tr><td>'+esc(f.n)+' <small>#'+f.r+'</small></td><td class="n">'+s.w+'/'+s.m+'</td><td class="n">'+s.tg+'</td><td class="n">'+s.tr+'</td><td class="n">'+sgn(FP.indicator(s))+'</td></tr>'; }).join('')
+      + '</table><div style="margin-top:8px">'
+      + bs.map(b => { const r = D.scores[b.id]; return boutRow(b.id, 'pool', 5, b.a, b.b, r, r ? r.v : 0, r && r.sa > r.sb ? b.a : r && r.sb > r.sa ? b.b : null); }).join('')
+      + '</div></div></details>';
+  });
+  if (D.phase === 'pools') h += '<details><summary>Test tools <span>for trying the app</span></summary><div class="inner"><button class="act ghost" data-act="simpools">Fill all pool scores with random results</button></div></details>';
+  return h;
+}
+function viewRanking(){
+  if (!D.ids.length) return '<div class="card">No fencers yet.</div>';
+  const cutAt = D.fin ? D.fin.q : null;
+  return '<div class="card"><table><tr><th class="n">#</th><th>Fencer</th><th class="n">V/M</th><th class="n">Ind</th><th class="n">TS</th><th class="n">Seed</th></tr>'
+   + D.rankIds.map((id,i) => { const f = D.fencers[id], s = D.stats[id], out = cutAt !== null && i >= cutAt;
+      return '<tr class="'+(out?'out':'')+' '+(cutAt===i?'cut':'')+'"><td class="n">'+(i+1)+'</td><td>'+esc(f.n)+(out?' (out)':'')+'</td><td class="n">'+FP.vm(s).toFixed(3)+'</td><td class="n">'+sgn(FP.indicator(s))+'</td><td class="n">'+s.tg+'</td><td class="n">'+f.r+'</td></tr>'; }).join('')
+   + '</table><p class="mute">Order: V/M, then indicator, then touches scored. Red line = cut.</p></div>';
+}
+function viewBracket(){
+  if (!D.bracket) return '<div class="card">The bracket appears when pools are finished.</div>';
+  const br = D.bracket; if (round === null) round = br.current || 2;
+  const real = br.rounds[round].filter(b => b.status === 'ready' || b.status === 'done');
+  const byes = br.rounds[round].filter(b => b.status === 'bye').length, wait = br.rounds[round].filter(b => b.status === 'pending').length;
+  let h = '<select id="round">' + br.tables.map(t => '<option value="'+t+'" '+(t===round?'selected':'')+'>'+FP.roundName(t)+(t===br.current?' (now)':'')+'</option>').join('') + '</select>'
+   + '<div class="card"><b>'+FP.roundName(round)+'</b> · '+br.entrants(round)+' fencers'+(byes?' · '+byes+' byes advance automatically':'')+(wait?' · '+wait+' bouts waiting for earlier winners':'')
+   + '<div style="margin-top:8px">' + (real.map(b => boutRow(b.id, 'de', 15, b.a, b.b, b.status==='done'?{sa:b.sa,sb:b.sb,by:b.by}:null, b.v, b.winner)).join('') || '<p>No bouts to score yet.</p>')
+   + '</div><p class="mute">To 15 touches. No ties: enter the score after priority (e.g. 10-9).</p></div>';
+  if (D.phase === 'de') h += '<details><summary>Test tools <span>for trying the app</span></summary><div class="inner"><button class="act ghost" data-act="simde">Play the whole bracket with random results</button></div></details>';
+  return h;
+}
+function viewResults(){
+  let h = '';
+  if (D.bracket && D.bracket.champion != null) h += '<div class="card"><div class="champ">Champion: '+esc(D.fencers[D.bracket.champion].n)+'</div></div>';
+  if (!D.standings.length) return h + '<div class="card">Results appear as bouts finish.</div>';
+  return h + '<div class="card"><table><tr><th class="n">Place</th><th>Fencer</th></tr>' + D.standings.map(r => '<tr><td class="n">'+r.place+(r.tied?'T':'')+'</td><td>'+esc(r.name)+'</td></tr>').join('') + '</table></div>';
+}
+function render(){
+  if (dirty) return;
+  head();
+  if (!store) { $('#navwrap').innerHTML = ''; $('#app').innerHTML = viewHome(); return; }
+  if (!D) { $('#app').innerHTML = '<div class="card">Loading…</div>'; return; }
+  if (!D.meta) { $('#navwrap').innerHTML = ''; $('#app').innerHTML = '<div class="card">No tournament with code <b>'+esc(code)+'</b>. Check the code, or <a href="#">go back</a>.</div>'; return; }
+  $('#navwrap').innerHTML = '<nav>'+TABS.map(([k,l]) => '<button data-t="'+k+'" class="'+(tab===k?'on':'')+'">'+l+'</button>').join('')+'</nav>';
+  $('#app').innerHTML = {pools:viewPools, ranking:viewRanking, bracket:viewBracket, standings:viewResults}[tab]();
+}
+
+async function run(p, okMsg){ const r = await p; if (r && r.error) toast(r.error, true); else if (okMsg) toast(okMsg); return r; }
+document.addEventListener('click', async e => {
+  const t = e.target;
+  if (t.dataset.t) { tab = t.dataset.t; render(); return; }
+  const row = t.closest('.bout');
+  if (row && t.tagName === 'BUTTON') {
+    const a = row.querySelector('[data-s=a]').value, b = row.querySelector('[data-s=b]').value;
+    if (a === '' || b === '') { toast('Enter both scores.', true); return; }
+    const r = await svc.saveBout(row.dataset.kind, row.dataset.id, +a, +b, +row.dataset.v);
+    if (r.error) toast(r.error, true); else toast('Saved');
+    if (r.ok || r.conflict) delete drafts[row.dataset.id];
+    dirty = false; render(); return;
+  }
+  const act = t.dataset.act; if (!act) return;
+  if (act === 'create') { const c = FPStore.Service.code(); const s = LIVE ? new FPStore.FirebaseStore(c, CFG) : new FPStore.LocalStore(c);
+    await new FPStore.Service(s).create($('#newname').value || 'FencingPool Open'); if (s.close) s.close(); location.hash = c; }
+  if (act === 'join') { const c = $('#joincode').value.trim(); if (c) location.hash = c.toUpperCase(); }
+  if (act === 'share') { const url = location.href; if (navigator.share) navigator.share({title: D.meta.name, url}).catch(()=>{}); else { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch(_) { prompt('Copy this link', url); } } }
+  if (act === 'add') { const names = $('#names').value.split('\n'); const r = await run(svc.addFencers(names)); if (r.ok) { toast(r.added + ' added'); } }
+  if (act === 'clear') { if (confirm('Remove all fencers from the list?')) await run(svc.clearFencers()); }
+  if (act === 'start') { if (confirm('Start the pools? Registration closes.')) await run(svc.startPools()); }
+  if (act === 'finish') { if (confirm('Finish pools and build the bracket? Pool scores lock.')) { const r = await run(svc.finishPools(+$('#cut').value)); if (r.ok) { toast(r.qualified + ' qualified, ' + r.eliminated + ' out'); tab = 'bracket'; round = null; render(); } } }
+  if (act === 'mock') await run(svc.loadMock(265));
+  if (act === 'simpools') await run(svc.simulatePools());
+  if (act === 'simde') await run(svc.simulateDE());
+});
+document.addEventListener('input', e => { const row = e.target.closest('.bout'); if (!row || !e.target.dataset.s) return; (drafts[row.dataset.id] ??= {})[e.target.dataset.s] = e.target.value; });
+document.addEventListener('toggle', e => { const d = e.target; if (d.dataset && d.dataset.pool) { const n = +d.dataset.pool; d.open ? openPools.add(n) : openPools.delete(n); } }, true);
+document.addEventListener('change', e => { if (e.target.id === 'round') { round = +e.target.value; render(); } });
+const editing = el => el && el.tagName && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+document.addEventListener('focusin', e => { if (editing(e.target)) dirty = true; });
+document.addEventListener('focusout', () => setTimeout(() => { if (!editing(document.activeElement)) { dirty = false; render(); } }, 250));
+
+(async function start(){
+  if (LIVE) {
+    try {
+      await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+      await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js');
+    } catch (e) { toast('Could not load the live database. Check your internet.', true); }
+  }
+  route();
+})();
+</script>
+</body>
+</html>
